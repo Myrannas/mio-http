@@ -4,7 +4,7 @@ extern crate bytes;
 use mio::*;
 use mio::tcp::*;
 use mio::util::Slab;
-use bytes::{ByteBuf, MutByteBuf, SliceBuf};
+use bytes::{ByteBuf, MutByteBuf};
 use std::io;
 
 const SERVER : Token = Token(0);
@@ -32,6 +32,67 @@ struct HttpConnection {
     mut_buf: Option<MutByteBuf>,
     token: Option<Token>,
     interest: EventSet
+}
+
+#[derive(PartialEq)]
+enum SectionStates {
+    State_0, State_1, State_2
+}
+
+fn find_section_end(data:&mut ByteBuf) -> Option<u16> {
+    let mut state = SectionStates::State_0;
+    let mut position = 0;
+    let data2 : &[u8] = data.bytes();
+
+    for byte in data.bytes().iter() {
+        state = match (state, byte) {
+            (SectionStates::State_0, 0x0A) => SectionStates::State_1,
+            (SectionStates::State_1, 0x0D) => SectionStates::State_1,
+            (SectionStates::State_1, 0x0A) => SectionStates::State_2,
+            _ => SectionStates::State_0
+        };
+
+        if state == SectionStates::State_2 {
+            return Some(position)
+        }
+
+        position += 1
+    }
+
+    return None
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::find_section_end;
+    use bytes::ByteBuf;
+
+
+    #[test]
+    fn test_find_section_end_complete_empty_request() {
+        let buffer = ByteBuf::mut_with_capacity(128);
+        let mut written_buffer = buffer.flip();
+
+        let result = find_section_end(&mut written_buffer);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_find_section_end_complete() {
+        let data = "DATA\r\nDATA2\r\nDATA3\r\n\r\n".as_bytes();
+
+        let mut buffer = ByteBuf::mut_with_capacity(128);
+        buffer.write_slice(data);
+        let mut written_buffer = buffer.flip();
+
+        let result = find_section_end(&mut written_buffer);
+
+        assert_eq!(result, Some(22))
+    }
+
+
 }
 
 impl HttpConnection {
@@ -75,13 +136,6 @@ impl HttpConnection {
         }
 
         Ok(())
-    }
-
-    fn process(buffer: &ByteBuf) -> Option<()>{
-        let mut length = 0u32;
-        let mut state = 0;
-
-        Some(())
     }
 
     fn read_line(buffer: &mut ByteBuf) -> Option<String> {
