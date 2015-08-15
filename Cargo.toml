@@ -7,4 +7,5 @@ authors = ["michael"]
 mio = "0.4.1"
 slab = "0.1.2"
 bytes = "0.2.10"
-
+log = "0.3.1"
+threadpool = "0.1.4"
